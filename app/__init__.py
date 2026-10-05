@@ -1,0 +1,1 @@
+"""Especialty application package."""

@@ -1,0 +1,9 @@
+# Phase 1 dependencies.
+# No Gemini, Microsoft Graph, Google Calendar, or Facebook
+# libraries are installed yet. They will be added incrementally.
+fastapi
+uvicorn
+pytest
+httpx
+python-dotenv
+supabase
