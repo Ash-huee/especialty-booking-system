@@ -1,5 +1,5 @@
 """Business-logic services package.
 
-Phase 0: intentionally empty. Booking engine and conversation logic
-will be added in later phases.
+Phase 2: deterministic booking engine (`booking_service.py`) and
+Decimal-safe pricing (`pricing_service.py`). No AI decisions here.
 """

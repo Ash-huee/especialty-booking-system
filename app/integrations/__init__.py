@@ -1,6 +1,6 @@
 """External integrations package.
 
-Phase 1: contains only the Supabase connection client
-(`supabase_client.py`). No Gemini, Facebook, Excel, or Google Calendar
-integrations exist yet — real or fake.
+Phase 2: Supabase connection (`supabase_client.py`) plus the booking
+data-access layer (`booking_repository.py`). No Gemini, Facebook, Excel,
+or Google Calendar integrations exist — real or fake.
 """

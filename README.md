@@ -17,29 +17,33 @@ The long-term goal is to support:
 * Human escalation when AI is uncertain
 * Automated reporting
 
-> **Incremental project:** This repository is currently at **Phase 1 — database + Supabase foundation (in progress, not yet manually verified)**.
-> `GET /health` works. Supabase connection (`GET /health/db`) and the SQL
-> migration in `database/migrations/001_initial_schema.sql` exist in code
-> but are **not complete until manually verified with real credentials**.
-> Gemini, Facebook, Excel, Google Calendar, booking logic, and AI agents
+> **Incremental project:** This repository is currently at **Phase 2 — deterministic booking engine (complete and manually verified)**.
+> `GET /health`, `GET /health/db`, and `POST /bookings` (validation, capacity,
+> Decimal pricing, customer matching, PENDING/HANDOFF handling) are implemented
+> and verified against the real Supabase database.
+> Gemini, Facebook, Excel, Google Calendar, chatbot logic, and AI agents
 > are **not implemented yet**, including no fake/mock versions.
 
-## Current status (Phase 1 — in progress)
+## Current status (Phase 2 — complete and verified)
 
 CURRENTLY IMPLEMENTED:
 
 * FastAPI application (`app/main.py`)
-* Health router (`app/api/routes/health.py`) with `GET /health` (unchanged)
-* Database health router (`app/api/routes/db_health.py`) with `GET /health/db`
-* Environment-variable configuration (`app/core/config.py`), now including `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
-* Supabase client (`app/integrations/supabase_client.py`, server-side only, never exposes the key)
-* PostgreSQL/Supabase migration `database/migrations/001_initial_schema.sql` (customers, conversations, messages, packages, bookings, booking_items, business_settings)
-* Unit tests that run **without** real credentials + a separate live-DB integration test (skipped by default)
-* Docs: `docs/database.md` (design decisions), updated architecture/log
+* Health routers: `GET /health` (unchanged), `GET /health/db` (Supabase probe)
+* Deterministic booking engine (no AI):
+  * Request models (`app/models/booking.py`, `app/models/customer.py`)
+  * Business logic (`app/services/booking_service.py`) — validation, capacity, customer matching, statuses, handoff
+  * Decimal-safe pricing (`app/services/pricing_service.py`)
+  * Supabase data access (`app/integrations/booking_repository.py`)
+  * Thin route `POST /bookings` (`app/api/routes/bookings.py`, no rules in the route)
+* Environment-variable configuration incl. Supabase vars + `.env` loading
+* Migration `database/migrations/001_initial_schema.sql` (unchanged, no Phase 2 migration needed)
+* Unit tests without credentials + separate live-DB tests (skipped by default)
+* Docs: `docs/database.md`, `docs/booking-engine.md` (design decisions)
 
 PLANNED FOR FUTURE PHASES (intentionally deferred):
 
-* Booking engine / availability / confirmation logic, Gemini, conversation manager/chatbot, Facebook Messenger, SMS, website, Excel, Calendar, payments, production auth, AI agents.
+* Gemini extraction, conversation manager/chatbot, Facebook Messenger, SMS, website, Excel, Calendar, n8n, AI agents, payments, production auth, confirmation flow.
 
 ## Technology stack
 
@@ -50,28 +54,27 @@ PLANNED FOR FUTURE PHASES (intentionally deferred):
 * python-dotenv (optional local `.env` loading)
 * supabase (official Supabase Python client — Phase 1 only)
 
-See `requirements.txt`. No Gemini / Messenger / Excel / Calendar libraries yet.
+No new dependencies in Phase 2 (Pydantic arrives with FastAPI;
+money uses stdlib `decimal`). No Gemini / Messenger / Excel / Calendar libraries yet.
 
-## Current architecture (Phase 1)
+## Current architecture (Phase 2)
 
 ```text
-Client (browser / test)
-  ↓ HTTP
-FastAPI app (app/main.py)
-  ↓ includes routers
-Health router (app/api/routes/health.py) → {"status": "ok"}
-DB health router (app/api/routes/db_health.py) → checks Supabase
-  ↑                                              ↓
-Settings (app/core/config.py) ← env vars   Supabase client
-  (APP_NAME/ENV/DEBUG +                        (app/integrations/
-   SUPABASE_URL/KEY)                            supabase_client.py)
-                                                  ↓
-                                            Supabase/PostgreSQL
-                                            (source of truth,
-                                             see docs/database.md)
+POST /bookings (thin route, app/api/routes/bookings.py)
+  ↓ BookingCreateRequest (app/models/)
+BookingService (app/services/booking_service.py: validation,
+  capacity from business_settings, Decimal pricing, PENDING/HANDOFF)
+  ↓ via repository
+SupabaseBookingRepository (app/integrations/booking_repository.py)
+  ↓
+Supabase/PostgreSQL (source of truth, see docs/database.md)
+
+GET /health → {"status": "ok"}            (unchanged)
+GET /health/db → Supabase probe           (Phase 1)
 ```
 
-Future full architecture is documented in `docs/architecture.md`.
+AI (future) will only produce the request object — it never decides.
+Full architecture: `docs/architecture.md`. Engine detail: `docs/booking-engine.md`.
 
 ## Installation
 
@@ -165,9 +168,9 @@ The live-DB test (`tests/test_db_integration.py`) is skipped automatically
 unless `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set:
 
 ```bash
-pytest tests/test_health.py tests/test_config.py tests/test_supabase_client.py tests/test_db_health.py -v
-# Live check only (needs migration applied + .env configured):
-pytest tests/test_db_integration.py -v
+pytest tests/test_health.py tests/test_config.py tests/test_supabase_client.py tests/test_db_health.py tests/test_pricing_service.py tests/test_booking_validation.py tests/test_booking_capacity.py tests/test_booking_customer_status.py tests/test_bookings_api.py -v
+# Live checks only (need migration applied + .env configured):
+pytest tests/test_db_integration.py tests/test_booking_integration.py -v
 ```
 
 ## Available endpoint(s)
@@ -176,6 +179,7 @@ pytest tests/test_db_integration.py -v
 | ------ | ------------ | ----------------------------------------- | -------------------- |
 | GET    | `/health`    | `{"status": "ok"}`                        | —                    |
 | GET    | `/health/db` | `{"status": "ok", "database": "connected"}` | 503 `not_configured` / `unavailable` (no credentials leaked) |
+| POST   | `/bookings`  | 201 `{"status":"success","booking_id":...,"booking_status":"PENDING","estimated_price":...}` | 422 `validation_error` (structured `{field,code,message}`), 409 full date (`EVENT_CAPACITY_REACHED`), 202 `human_handoff`, 503 unconfigured DB |
 
 ## Database setup (manual, Phase 1)
 
@@ -196,17 +200,23 @@ especialty/
 │   │   └── routes/
 │   │       ├── __init__.py
 │   │       ├── health.py
-│   │       └── db_health.py
+│   │       ├── db_health.py
+│   │       └── bookings.py
 │   ├── core/
 │   │   ├── __init__.py
 │   │   └── config.py
 │   ├── models/
-│   │   └── __init__.py
+│   │   ├── __init__.py
+│   │   ├── booking.py
+│   │   └── customer.py
 │   ├── services/
-│   │   └── __init__.py
+│   │   ├── __init__.py
+│   │   ├── booking_service.py
+│   │   └── pricing_service.py
 │   └── integrations/
 │       ├── __init__.py
-│       └── supabase_client.py
+│       ├── supabase_client.py
+│       └── booking_repository.py
 ├── database/
 │   └── migrations/
 │       └── 001_initial_schema.sql
@@ -216,10 +226,18 @@ especialty/
 │   ├── test_config.py
 │   ├── test_supabase_client.py
 │   ├── test_db_health.py
-│   └── test_db_integration.py
+│   ├── test_db_integration.py
+│   ├── fakes.py
+│   ├── test_pricing_service.py
+│   ├── test_booking_validation.py
+│   ├── test_booking_capacity.py
+│   ├── test_booking_customer_status.py
+│   ├── test_bookings_api.py
+│   └── test_booking_integration.py
 ├── docs/
 │   ├── architecture.md
 │   ├── database.md
+│   ├── booking-engine.md
 │   └── development-log.md
 ├── .env.example
 ├── .gitignore

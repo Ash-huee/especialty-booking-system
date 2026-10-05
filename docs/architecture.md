@@ -1,8 +1,8 @@
 # Especialty Architecture
 
 This document describes the intended long-term architecture and clearly
-separates what exists today (Phase 1 in progress) from what is planned
-for later phases.
+separates what exists today (Phase 2 complete and verified) from what is
+planned for later phases.
 
 ## Long-term conceptual flow
 
@@ -37,15 +37,15 @@ Entry points where customers talk to the system:
 
 Not implemented in Phase 0.
 
-### 2. API layer — CURRENTLY IMPLEMENTED (minimal, Phase 1)
+### 2. API layer — CURRENTLY IMPLEMENTED (Phase 2)
 
 * **Implemented:** FastAPI app (`app/main.py`) with router registration.
 * **Implemented:** `GET /health` router (`app/api/routes/health.py`, unchanged).
-* **Implemented (Phase 1, needs manual verification):** `GET /health/db`
-  router (`app/api/routes/db_health.py`) — 200 `connected` when Supabase
-  answers, 503 `not_configured`/`unavailable` otherwise, never leaks credentials.
-* **Planned:** webhook endpoints (e.g. Messenger), booking/order endpoints,
-  validation with Pydantic models, authentication.
+* **Implemented:** `GET /health/db` router (`app/api/routes/db_health.py`).
+* **Implemented (Phase 2, verified):** `POST /bookings`
+  (`app/api/routes/bookings.py`) — thin route delegating to the booking
+  service (201 success / 422 validation / 409 full date / 202 handoff / 503 unconfigured).
+* **Planned:** webhook endpoints (e.g. Messenger), authentication.
 
 ### 3. Conversation Manager — PLANNED / FUTURE
 
@@ -65,30 +65,35 @@ Not implemented in Phase 0. Placeholder package: `app/services/`.
 No real or fake Gemini integration exists in Phase 0.
 Placeholder package: `app/integrations/`.
 
-### 5. Booking Engine (deterministic) — PLANNED / FUTURE
+### 5. Booking Engine (deterministic) — CURRENTLY IMPLEMENTED (Phase 2 verified)
 
+* **Implemented:** `app/services/booking_service.py` — EVENT/FOOD_ORDER
+  validation, capacity (limit from `business_settings`), Decimal pricing,
+  customer matching (phone → email → create), PENDING-only creation,
+  `HUMAN_HANDOFF` on unsafe states. No AI involved (see `docs/booking-engine.md`).
+* **Implemented:** request models (`app/models/booking.py`,
+  `app/models/customer.py`) and pricing (`app/services/pricing_service.py`).
+* **Implemented:** data access (`app/integrations/booking_repository.py`)
+  keeping Supabase details out of the service.
+* **Verified:** `POST /bookings` manually tested against real Supabase
+  (valid EVENT/FOOD_ORDER persist as PENDING; invalid requests persist
+  nothing; capacity enforced) — see `docs/development-log.md`. Phase 2 complete.
 * Validates structured data against business rules
   (capacity, menu, pricing, time windows).
 * Creates/updates bookings, orders, party packages, food trays.
 * This is plain Python logic so behavior is predictable and testable.
 
-Not implemented in Phase 0. Placeholder packages:
-`app/services/`, `app/models/`.
-
-### 6. Database (Supabase / PostgreSQL) — CURRENTLY IMPLEMENTED (foundation, Phase 1 in progress)
+### 6. Database (Supabase / PostgreSQL) — CURRENTLY IMPLEMENTED (foundation verified Phase 1)
 
 * **Implemented:** migration `database/migrations/001_initial_schema.sql`
   creating `customers`, `conversations`, `messages`, `packages`,
   `bookings`, `booking_items`, `business_settings` (see `docs/database.md`).
 * **Implemented:** server-side Supabase client (`app/integrations/supabase_client.py`)
   + config (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`).
-* **Not yet verified:** migration has not been applied in Supabase and
-  `GET /health/db` has not been manually tested with real credentials,
-  so Phase 1 is not marked complete.
+* **Implemented (Phase 2):** booking data-access layer
+  (`app/integrations/booking_repository.py`). No schema change was needed.
 * Application source of truth for customers, bookings, orders, messages.
 * Supabase/PostgreSQL is the intended backend.
-
-No repositories / CRUD services yet — those come with Phase 2 booking logic.
 
 ### 7. Microsoft Excel integration — PLANNED / FUTURE
 
@@ -110,27 +115,27 @@ No real or fake Calendar integration exists in Phase 0.
   the conversation is handed to a human staff member.
 * Requires conversation state + staff notification channel.
 
-Not implemented in Phase 0.
+Not implemented — future phase.
 
 ### 10. Reporting — PLANNED / FUTURE
 
 * Automated reports (bookings per day, revenue, popular packages, etc.).
 * Built on top of database records.
 
-Not implemented in Phase 0.
+Not implemented — future phase.
 
 ## Summary: implemented vs. future
 
-| Area | Phase 1 status |
+| Area | Phase 2 status |
 | ---- | -------------- |
-| FastAPI app + health endpoint | CURRENTLY IMPLEMENTED |
-| Env-based config + basic logging | CURRENTLY IMPLEMENTED (now incl. Supabase vars) |
-| Health test (pytest) | CURRENTLY IMPLEMENTED |
-| Supabase client + `GET /health/db` + migration SQL | CURRENTLY IMPLEMENTED (needs manual verification) |
+| FastAPI app + health endpoints | CURRENTLY IMPLEMENTED |
+| Env-based config + basic logging | CURRENTLY IMPLEMENTED (incl. Supabase vars + `.env` loading) |
+| Health tests (pytest) | CURRENTLY IMPLEMENTED |
+| Supabase client + `GET /health/db` + migration SQL | CURRENTLY IMPLEMENTED (verified Phase 1) |
+| Booking engine + models + pricing | CURRENTLY IMPLEMENTED (verified Phase 2) |
+| `POST /bookings` + repository | CURRENTLY IMPLEMENTED (verified Phase 2) |
 | Conversation manager | PLANNED / FUTURE |
 | Gemini AI layer | PLANNED / FUTURE |
-| Booking engine + models | PLANNED / FUTURE |
-| Supabase repositories / CRUD | PLANNED / FUTURE (Phase 2) |
 | Excel integration | PLANNED / FUTURE |
 | Google Calendar integration | PLANNED / FUTURE |
 | Facebook Messenger | PLANNED / FUTURE |

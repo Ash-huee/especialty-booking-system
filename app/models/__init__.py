@@ -1,4 +1,5 @@
 """Data models package.
 
-Phase 0: intentionally empty. Database models will be added in a later phase.
+Phase 2: Pydantic request structures (`booking.py`) plus customer
+normalization helpers (`customer.py`). No AI logic here.
 """
