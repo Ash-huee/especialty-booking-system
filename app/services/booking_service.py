@@ -18,6 +18,7 @@ from app.integrations.booking_repository import RepositoryError
 from app.models.booking import BookingCreateRequest, ValidationError
 from app.models.customer import normalize_customer_data, validate_customer
 from app.services import pricing_service
+from app.services.customer_service import find_or_create_customer
 
 SUPPORTED_BOOKING_TYPES = {"EVENT", "FOOD_ORDER"}
 SUPPORTED_SERVICE_TYPES = {
@@ -295,16 +296,10 @@ def create_booking(
     estimated_str = str(estimated) if estimated is not None else None
 
     # -- 8. customer matching (deterministic, no AI) ------------------------------
-    # Rule: exact phone match wins; otherwise exact email match; otherwise
-    # create a new customer. Simple, explainable, no fuzzy matching.
+    # Shared rule (see app/services/customer_service.py): exact phone match
+    # wins, otherwise exact email match, otherwise create a new customer.
     try:
-        existing = repository.find_customer_by_phone(customer.phone)
-        if existing is None and customer.email:
-            existing = repository.find_customer_by_email(customer.email)
-        if existing is None:
-            existing = repository.create_customer(
-                customer.name, customer.phone, customer.email
-            )
+        existing, _ = find_or_create_customer(customer, repository)
         customer_id = existing.get("id")
         if not customer_id:
             raise RepositoryError("Customer record has no id")

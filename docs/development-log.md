@@ -223,3 +223,78 @@ Phase 2 is accepted and ready for Git commit. No Phase 3 work started.
   email fails shape validation instead of reaching business validation.
   Left unchanged during the nullability correction; revisit if a channel
   legitimately sends `customer_email: null`.
+
+---
+
+## Phase 3 — Conversation + messaging foundation (COMPLETED AND VERIFIED)
+
+**Date:** 2026-10-06
+**Verification date:** 2026-10-06
+
+### Objective
+
+Build the conversation/messaging foundation that later lets Gemini and
+channels talk to the deterministic booking engine — without implementing
+any AI, channel, or booking-decision logic in this layer.
+
+### What was implemented
+
+* `app/models/conversation.py`: DB-contract constants (lowercase statuses,
+  senders, channels), `ConversationMessageRequest`, result dataclasses.
+* `app/services/customer_service.py`: shared phone → email → create
+  resolution; `booking_service.py` refactored to use it (behavior
+  unchanged, Phase 2 tests green).
+* `app/services/conversation_service.py`: open/retrieve/history plus
+  deterministic status transitions (`closed` terminal; unknown statuses
+  and `closed` → anything rejected).
+* `app/services/message_service.py`: append + oldest-first history;
+  `customer`/`staff`/`system` senders (`assistant` reserved for Gemini).
+* `app/services/conversation_manager.py`: 6-step local-test flow
+  (validate → find/create customer → reuse/open conversation → store
+  customer message → structured result). No Gemini, bookings, or intent.
+* `app/integrations/conversation_repository.py`: conversation/message
+  data access reusing `RepositoryError`; no new tables, no migration.
+* `app/api/routes/conversations.py`: thin `POST /conversations/messages`
+  (201 / 422 / 503) and `GET /conversations/{id}` (200 / 404 / 503).
+* Tests (mocked via `tests/conversation_fakes.py`): 11 flow tests +
+  7 API tests covering new/existing/active conversations, isolation,
+  ordering, history, handoff/closed statuses, invalid input, DB failures.
+* Docs: created `docs/conversation-layer.md`; updated `README.md`,
+  `docs/architecture.md`.
+
+### What was intentionally NOT implemented
+
+* No Gemini, intent inference, Messenger/SMS/website channels
+  (`local_test` only; `facebook` rejected), Excel, Calendar, n8n,
+  chatbot logic, auth, payments.
+
+### Testing performed
+
+* New Phase 3 tests: 18 passed. Full suite: 79 passed, 1 skipped
+  (live-DB test without credentials in that shell), 3 pre-existing
+  upstream warnings, no failures — Phase 1 and 2 suites intact.
+  The audit independently reran both suites and confirmed these results.
+
+### Final Phase 3 verification (2026-10-06, real Supabase)
+
+* TEST 1 — New customer / new conversation: PASS (201; customer,
+  conversation, and message created and confirmed in Supabase).
+* TEST 2 — Existing customer / conversation: PASS (201;
+  `created_new_conversation: false`, `created_new_customer: false`;
+  same IDs; second message stored under the existing conversation).
+* TEST 3 — Customer isolation: PASS (201; different customer and
+  conversation IDs, confirmed in Supabase).
+* TEST 4 — Conversation history: PASS (200; metadata correct, two
+  messages oldest-first, other customer's message excluded).
+* TEST 5 — Unsupported channel (`facebook`): PASS (422
+  `UNSUPPORTED_CHANNEL`; no Supabase records created).
+* CLOSED CONVERSATION: not manually tested — the Phase 3 API exposes no
+  status/update endpoint (deliberate; no endpoint was added just for
+  testing). Covered by automated tests. Recorded here as a verification
+  limitation, not a defect.
+* `facebook` remains intentionally unsupported; no Gemini, Excel,
+  Calendar, SMS, auth, payments, intent extraction, agents, or n8n exist.
+* Conversation handling stays separate from the deterministic booking
+  engine, which remains the only decider of booking validity.
+
+Phase 3 is accepted and ready for Git checkpoint. No Phase 4 work started.

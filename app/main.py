@@ -4,7 +4,7 @@ import logging
 
 from fastapi import FastAPI
 
-from app.api.routes import bookings, db_health, health
+from app.api.routes import bookings, conversations, db_health, health
 from app.core.config import settings
 
 # Basic logging setup: enough to see startup and request info in development.
@@ -23,6 +23,7 @@ app = FastAPI(title=settings.APP_NAME)
 app.include_router(health.router)
 app.include_router(db_health.router)
 app.include_router(bookings.router)
+app.include_router(conversations.router)
 
 logger.info(
     "Starting %s (env=%s, debug=%s)",

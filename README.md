@@ -17,33 +17,38 @@ The long-term goal is to support:
 * Human escalation when AI is uncertain
 * Automated reporting
 
-> **Incremental project:** This repository is currently at **Phase 2 — deterministic booking engine (complete and manually verified)**.
-> `GET /health`, `GET /health/db`, and `POST /bookings` (validation, capacity,
-> Decimal pricing, customer matching, PENDING/HANDOFF handling) are implemented
-> and verified against the real Supabase database.
-> Gemini, Facebook, Excel, Google Calendar, chatbot logic, and AI agents
+> **Incremental project:** This repository is currently at **Phase 3 — conversation + messaging foundation (complete and manually verified)**.
+> `GET /health`, `GET /health/db`, `POST /bookings`, `POST /conversations/messages`,
+> and conversation history are implemented and verified against the real
+> Supabase database.
+> Gemini, Facebook, Excel, Google Calendar, SMS, chatbot logic, and AI agents
 > are **not implemented yet**, including no fake/mock versions.
 
-## Current status (Phase 2 — complete and verified)
+## Current status (Phase 3 — complete and verified)
 
 CURRENTLY IMPLEMENTED:
 
 * FastAPI application (`app/main.py`)
 * Health routers: `GET /health` (unchanged), `GET /health/db` (Supabase probe)
-* Deterministic booking engine (no AI):
+* Deterministic booking engine (no AI, verified Phase 2):
   * Request models (`app/models/booking.py`, `app/models/customer.py`)
   * Business logic (`app/services/booking_service.py`) — validation, capacity, customer matching, statuses, handoff
   * Decimal-safe pricing (`app/services/pricing_service.py`)
   * Supabase data access (`app/integrations/booking_repository.py`)
   * Thin route `POST /bookings` (`app/api/routes/bookings.py`, no rules in the route)
+* Conversation + messaging foundation (no AI, verified Phase 3):
+  * Request/state models (`app/models/conversation.py`, DB contract: lowercase statuses/senders/channels)
+  * Services (`app/services/conversation_service.py`, `message_service.py`, `conversation_manager.py`, shared `customer_service.py`)
+  * Supabase data access (`app/integrations/conversation_repository.py`)
+  * Thin routes `POST /conversations/messages` + `GET /conversations/{id}` (`app/api/routes/conversations.py`)
 * Environment-variable configuration incl. Supabase vars + `.env` loading
-* Migration `database/migrations/001_initial_schema.sql` (unchanged, no Phase 2 migration needed)
+* Migration `database/migrations/001_initial_schema.sql` (unchanged, no new migration needed)
 * Unit tests without credentials + separate live-DB tests (skipped by default)
-* Docs: `docs/database.md`, `docs/booking-engine.md` (design decisions)
+* Docs: `docs/database.md`, `docs/booking-engine.md`, `docs/conversation-layer.md` (design decisions)
 
 PLANNED FOR FUTURE PHASES (intentionally deferred):
 
-* Gemini extraction, conversation manager/chatbot, Facebook Messenger, SMS, website, Excel, Calendar, n8n, AI agents, payments, production auth, confirmation flow.
+* Gemini extraction, Messenger/SMS/website channels, Excel, Calendar, n8n, AI agents, payments, production auth, confirmation flow.
 
 ## Technology stack
 
@@ -57,24 +62,28 @@ PLANNED FOR FUTURE PHASES (intentionally deferred):
 No new dependencies in Phase 2 (Pydantic arrives with FastAPI;
 money uses stdlib `decimal`). No Gemini / Messenger / Excel / Calendar libraries yet.
 
-## Current architecture (Phase 2)
+## Current architecture (Phase 3)
 
 ```text
-POST /bookings (thin route, app/api/routes/bookings.py)
-  ↓ BookingCreateRequest (app/models/)
-BookingService (app/services/booking_service.py: validation,
-  capacity from business_settings, Decimal pricing, PENDING/HANDOFF)
+POST /conversations/messages → ConversationManager (orchestrates only)
   ↓ via repository
-SupabaseBookingRepository (app/integrations/booking_repository.py)
-  ↓
-Supabase/PostgreSQL (source of truth, see docs/database.md)
+ConversationRepository → Supabase (customers/conversations/messages)
+
+GET /conversations/{id} → metadata + oldest-first history
+
+POST /bookings (thin route, app/api/routes/bookings.py)   [Phase 2, verified]
+  ↓ BookingCreateRequest (app/models/)
+BookingService (validation, capacity, Decimal pricing, PENDING/HANDOFF)
+  ↓ via repository
+SupabaseBookingRepository → Supabase/PostgreSQL (source of truth)
 
 GET /health → {"status": "ok"}            (unchanged)
 GET /health/db → Supabase probe           (Phase 1)
 ```
 
-AI (future) will only produce the request object — it never decides.
-Full architecture: `docs/architecture.md`. Engine detail: `docs/booking-engine.md`.
+Future Gemini will read conversation history and produce booking requests —
+it never decides. Full architecture: `docs/architecture.md`.
+Conversation detail: `docs/conversation-layer.md`.
 
 ## Installation
 
@@ -168,7 +177,7 @@ The live-DB test (`tests/test_db_integration.py`) is skipped automatically
 unless `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set:
 
 ```bash
-pytest tests/test_health.py tests/test_config.py tests/test_supabase_client.py tests/test_db_health.py tests/test_pricing_service.py tests/test_booking_validation.py tests/test_booking_capacity.py tests/test_booking_customer_status.py tests/test_bookings_api.py -v
+pytest tests/test_health.py tests/test_config.py tests/test_supabase_client.py tests/test_db_health.py tests/test_pricing_service.py tests/test_booking_validation.py tests/test_booking_capacity.py tests/test_booking_customer_status.py tests/test_bookings_api.py tests/test_conversation_flow.py tests/test_conversations_api.py -v
 # Live checks only (need migration applied + .env configured):
 pytest tests/test_db_integration.py tests/test_booking_integration.py -v
 ```
@@ -180,6 +189,8 @@ pytest tests/test_db_integration.py tests/test_booking_integration.py -v
 | GET    | `/health`    | `{"status": "ok"}`                        | —                    |
 | GET    | `/health/db` | `{"status": "ok", "database": "connected"}` | 503 `not_configured` / `unavailable` (no credentials leaked) |
 | POST   | `/bookings`  | 201 `{"status":"success","booking_id":...,"booking_status":"PENDING","estimated_price":...}` | 422 `validation_error` (structured `{field,code,message}`), 409 full date (`EVENT_CAPACITY_REACHED`), 202 `human_handoff`, 503 unconfigured DB |
+| POST   | `/conversations/messages` | 201 `{"status":"success","conversation_id":...,"message_id":...,"conversation_status":"active",...}` | 422 `validation_error`, 503 unconfigured/unavailable DB |
+| GET    | `/conversations/{id}` | 200 conversation metadata + oldest-first messages | 404 `not_found`, 503 unavailable DB |
 
 ## Database setup (manual, Phase 1)
 
@@ -201,22 +212,29 @@ especialty/
 │   │       ├── __init__.py
 │   │       ├── health.py
 │   │       ├── db_health.py
-│   │       └── bookings.py
+│   │       ├── bookings.py
+│   │       └── conversations.py
 │   ├── core/
 │   │   ├── __init__.py
 │   │   └── config.py
 │   ├── models/
 │   │   ├── __init__.py
 │   │   ├── booking.py
-│   │   └── customer.py
+│   │   ├── customer.py
+│   │   └── conversation.py
 │   ├── services/
 │   │   ├── __init__.py
 │   │   ├── booking_service.py
-│   │   └── pricing_service.py
+│   │   ├── pricing_service.py
+│   │   ├── customer_service.py
+│   │   ├── conversation_service.py
+│   │   ├── message_service.py
+│   │   └── conversation_manager.py
 │   └── integrations/
 │       ├── __init__.py
 │       ├── supabase_client.py
-│       └── booking_repository.py
+│       ├── booking_repository.py
+│       └── conversation_repository.py
 ├── database/
 │   └── migrations/
 │       └── 001_initial_schema.sql
@@ -233,11 +251,15 @@ especialty/
 │   ├── test_booking_capacity.py
 │   ├── test_booking_customer_status.py
 │   ├── test_bookings_api.py
-│   └── test_booking_integration.py
+│   ├── test_booking_integration.py
+│   ├── conversation_fakes.py
+│   ├── test_conversation_flow.py
+│   └── test_conversations_api.py
 ├── docs/
 │   ├── architecture.md
 │   ├── database.md
 │   ├── booking-engine.md
+│   ├── conversation-layer.md
 │   └── development-log.md
 ├── .env.example
 ├── .gitignore

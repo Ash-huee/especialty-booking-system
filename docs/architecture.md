@@ -1,7 +1,7 @@
 # Especialty Architecture
 
 This document describes the intended long-term architecture and clearly
-separates what exists today (Phase 2 complete and verified) from what is
+separates what exists today (Phase 3 complete and verified) from what is
 planned for later phases.
 
 ## Long-term conceptual flow
@@ -45,16 +45,24 @@ Not implemented in Phase 0.
 * **Implemented (Phase 2, verified):** `POST /bookings`
   (`app/api/routes/bookings.py`) — thin route delegating to the booking
   service (201 success / 422 validation / 409 full date / 202 handoff / 503 unconfigured).
-* **Planned:** webhook endpoints (e.g. Messenger), authentication.
+* **Implemented (Phase 3, verified):**
+  `POST /conversations/messages` + `GET /conversations/{id}`
+  (`app/api/routes/conversations.py`) — thin local-test routes over the
+  conversation manager (201 / 422 / 404 / 503, no AI, no channels).
+* **Planned:** channel webhook endpoints (e.g. Messenger), authentication.
 
-### 3. Conversation Manager — PLANNED / FUTURE
+### 3. Conversation Manager — CURRENTLY IMPLEMENTED (Phase 3, basic flow)
 
-* Routes between structured buttons (predictable actions) and
-  natural-language handling.
-* Tracks conversation state per customer.
-* Decides when to ask clarifying questions vs. proceed.
-
-Not implemented in Phase 0. Placeholder package: `app/services/`.
+* **Implemented:** `app/services/conversation_manager.py` — local-test flow
+  (find/create customer → reuse/open active conversation → store customer
+  message). No intent inference, no bookings, no AI (see
+  `docs/conversation-layer.md`).
+* **Implemented:** conversation state (`conversation_service.py`: open,
+  retrieve, deterministic status transitions) and message history
+  (`message_service.py`: append + oldest-first reads) on the Phase 1
+  `conversations`/`messages` tables. No migration was needed.
+* **Planned (future):** routing between structured buttons and
+  natural-language handling, clarifying questions, Gemini interpretation.
 
 ### 4. Gemini AI layer — PLANNED / FUTURE
 
@@ -134,7 +142,8 @@ Not implemented — future phase.
 | Supabase client + `GET /health/db` + migration SQL | CURRENTLY IMPLEMENTED (verified Phase 1) |
 | Booking engine + models + pricing | CURRENTLY IMPLEMENTED (verified Phase 2) |
 | `POST /bookings` + repository | CURRENTLY IMPLEMENTED (verified Phase 2) |
-| Conversation manager | PLANNED / FUTURE |
+| Conversation layer + local-test routes | CURRENTLY IMPLEMENTED (verified Phase 3) |
+| Conversation manager | PARTIAL (basic flow implemented; buttons/NL routing future) |
 | Gemini AI layer | PLANNED / FUTURE |
 | Excel integration | PLANNED / FUTURE |
 | Google Calendar integration | PLANNED / FUTURE |
